@@ -21,7 +21,7 @@ def test_bloom_sizes():
     size = len(bloom.get_bytes())*8
     assert size == (958506 + 22)*4
 
-def test_bloom_bulk_cbf_insert():
+def test_bloom_bulk_insert_and_error():
     # Test that the bulk insert function works
     num_features = 100000
     error_rate = 0.01
@@ -41,6 +41,10 @@ def test_bloom_bulk_cbf_insert():
         bloom.add_str_batch(features)
         time_to_insert_batch = time.time() - start_time
         print(f"Time to insert {len(features)} features batched: {time_to_insert_batch}")
+
+        # Check that they are all present
+        for feature in features:
+            assert bloom.contains(feature)
         
         # Clear
         bloom.clear()
@@ -53,7 +57,6 @@ def test_bloom_bulk_cbf_insert():
         print(f"Time to insert {len(features)} features one at a time: {time_to_insert_singleton}")
 
         assert time_to_insert_batch < time_to_insert_singleton/10
-
 
         # Check that they are all present
         for feature in features:
@@ -72,4 +75,4 @@ def test_bloom_bulk_cbf_insert():
 
 if __name__ == "__main__":
     test_bloom_sizes()
-    test_bloom_bulk_cbf_insert()
+    test_bloom_bulk_insert_and_error()

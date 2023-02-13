@@ -1,28 +1,17 @@
 
-import array
-from collections import defaultdict
-from collections.abc import Mapping
-from functools import partial
 from numbers import Integral, Real
-from operator import itemgetter
-import re
-import unicodedata
-import warnings
 
 import numpy as np
 import scipy.sparse as sp
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import normalize
-from sklearn.feature_extraction._hash import BloomBags
-from sklearn.feature_extraction._stop_words import ENGLISH_STOP_WORDS
 from sklearn.feature_extraction.text import _VectorizerMixin, CountVectorizer
-from sklearn.utils.validation import check_is_fitted, check_array, FLOAT_DTYPES
-from sklearn.utils import _IS_32BIT, IS_PYPY
 from sklearn.utils._param_validation import StrOptions, Interval
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
+from .bag import BloomBag, BloomBagCounting
 
 class BloomVectorizer(
     TransformerMixin, _VectorizerMixin, BaseEstimator, auto_wrap_output_keys=None
@@ -45,7 +34,6 @@ class BloomVectorizer(
         "n_features": [Interval(Integral, 1, np.iinfo(np.int32).max, closed="left")],
         "binary": ["boolean"],
         "norm": [StrOptions({"l1", "l2"}), None],
-        "alternate_sign": ["boolean"],
         "dtype": "no_validation",  # delegate to numpy
     }
 
@@ -67,6 +55,7 @@ class BloomVectorizer(
         n_bags=5,
         error_rate=0.01,
         feature_rank=None,
+        bloom_bag_class=BloomBag,
         binary=False,
         norm="l2",
         dtype=np.float64,
@@ -85,6 +74,7 @@ class BloomVectorizer(
         self.n_bags = n_bags
         self.error_rate = error_rate
         self.feature_rank = feature_rank
+        self.bloom_bag_class = bloom_bag_class
         self.ngram_range = ngram_range
         self.binary = binary
         self.norm = norm
@@ -145,7 +135,19 @@ class BloomVectorizer(
             [
                 (
                     "features",
-                    CountVectorizer(tokenizer=self.tokenizer, max_features=n_features),
+                    CountVectorizer(
+                        tokenizer = self.tokenizer,
+                        max_features = n_features,
+                        token_pattern = self.token_pattern,
+                        stop_words = self.stop_words,
+                        ngram_range = self.ngram_range,
+                        analyzer = self.analyzer,
+                        lowercase = self.lowercase,
+                        preprocessor = self.preprocessor,
+                        strip_accents = self.strip_accents,
+                        decode_error = self.decode_error,
+                        encoding = self.encoding,
+                    ),
                 ),
                 ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
             ]
@@ -197,8 +199,8 @@ class BloomVectorizer(
         # Run feature ranking
         self.ranked_features = self._rank_features(X, y, self.n_features)
 
-        # Build the bloom bag
-        self.bloom_bag = BloomBags(
+        # Build the bloom bag using self.bloom_bag_class
+        self.bloom_bag = self.bloom_bag_class(
             n_bags=self.n_bags,
             error_rate=self.error_rate,
             input_type="string",

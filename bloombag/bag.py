@@ -11,7 +11,7 @@ from sklearn.utils.validation import check_is_fitted, check_array, FLOAT_DTYPES
 from sklearn.utils import _IS_32BIT, IS_PYPY
 from sklearn.utils._param_validation import StrOptions, Interval
 
-class BloomBag(TransformerMixin, BaseEstimator):
+class BloomBagCounting(TransformerMixin, BaseEstimator):
     _parameter_constraints: dict = {
         "n_bags": [Interval(Integral, 1, 15, closed="both")],
         "error_rate": [Interval(Real, 0.0, 1.0, closed="both")],
@@ -72,40 +72,50 @@ class BloomBag(TransformerMixin, BaseEstimator):
         builder.enable_repeat_insert(True)
         self.counting_bloom_filter = builder.build_counting_bloom_filter()  # type: CountingBloomFilter
 
-        # Create a temporary bloom filter to keep track of when a feature
-        # hash has been seen in multiple buckets
-        duplicate_bloom = builder.build_bloom_filter()  # type: BloomFilter
 
         # Now build the bloom filter vocabularies
         bucket_size = len(self.feature_rank) / self.n_bags
-
+        
+        # First pass: Adding the entries to the bloom filter
         for i, f in enumerate(self.feature_rank):
             feature_bucket = int(i / bucket_size)
-
-            # Skip features that have already been seen in multiple buckets
-            if f in duplicate_bloom:
-                next
             
             # If the feature is already in the counting bloom filter, then
             # it is in multiple buckets and should be ignored
-            if f in self.counting_bloom_filter:
-                # Hackjob. TODO: FIX THIS ONCE COUNT FUNCTION AVAILABLE
-                cur_bucket = 0
-                while f in self.counting_bloom_filter:
-                    self.counting_bloom_filter.remove(f)
-                    cur_bucket += 1
+            if f not in self.counting_bloom_filter:
+                # Add the feature to the counting bloom filter
+                for _ in range(feature_bucket+1):
+                    self.counting_bloom_filter.add(f)
+        
+        # Second pass: Any features with incorrect counts are instead removed
+        total_collisions = 0
+        collisions = 1
+        while collisions > 0:
+            collisions = 0
+            for i, f in enumerate(self.feature_rank):
+                feature_bucket = int(i / bucket_size)
                 
-                if cur_bucket != feature_bucket:
-                    # If the feature is in multiple buckets, add it to the
-                    # duplicate bloom filter
-                    duplicate_bloom.add(f)
-                    next
-                
-                # Otherwise, sets the count back to the same bucket again
+                # If the feature is already in the counting bloom filter, then
+                # it is in multiple buckets and should be ignored
+                if f in self.counting_bloom_filter:
+                    # Hackjob. TODO: FIX THIS ONCE COUNT FUNCTION AVAILABLE
+                    cur_bucket = -1
+                    while f in self.counting_bloom_filter:
+                        self.counting_bloom_filter.remove(f)
+                        cur_bucket += 1
+                    
+                    if cur_bucket != feature_bucket:
+                        # Collision error, clear this bucket.
+                        collisions += 1
+                        total_collisions += 1
+                    else:
+                        # Add the feature back to the counting bloom filter
+                        for _ in range(feature_bucket+1):
+                            self.counting_bloom_filter.add(f)
             
-            # Add the feature to the counting bloom filter
-            for _ in range(feature_bucket):
-                self.counting_bloom_filter.add(f)
+            print(f"Dropped {collisions} features due to collisions out of {len(self.feature_rank)} features")
+        
+        print(f"In total dropped {total_collisions} features due to collisions out of {len(self.feature_rank)} features")
 
         return self
 
@@ -149,12 +159,17 @@ class BloomBag(TransformerMixin, BaseEstimator):
                 if self.counting_bloom_filter.contains(v):
                     # Get the bucket number that the feature belongs to
                     # Hackjob. TODO: FIX THIS ONCE COUNT FUNCTION AVAILABLE
-                    bucket = 0
+                    bucket = -1
                     while(v in self.counting_bloom_filter):
                         self.counting_bloom_filter.remove(v)
                         bucket += 1
+                    
+                    if bucket >= self.n_bags:
+                        # This feature hit a collision error case, ignore it
+                        continue
+                    
                     X_out[row][bucket] += c
-                    for _ in range(bucket):
+                    for _ in range(bucket+1):
                         self.counting_bloom_filter.add(v)
 
         return np.array(X_out)
@@ -163,7 +178,7 @@ class BloomBag(TransformerMixin, BaseEstimator):
         return {"X_types": [self.input_type]}
 
 
-class BloomBagOld(TransformerMixin, BaseEstimator):
+class BloomBag(TransformerMixin, BaseEstimator):
     _parameter_constraints: dict = {
         "n_bags": [Interval(Integral, 1, np.iinfo(np.int32).max, closed="both")],
         "input_type": [StrOptions({"dict", "pair", "string"})],

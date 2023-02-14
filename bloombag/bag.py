@@ -243,9 +243,9 @@ class BloomBag(TransformerMixin, BaseEstimator):
 
             # Create and fit the bloom filter
             bloom = BloomFilter(bucket_size_max, self.error_rate)
-            # bloom.add_str_batch(f)
-            for feature in f:
-                bloom.add(feature)
+            bloom.add_str_batch(f)
+            #for feature in f:
+            #    bloom.add(feature)
 
             self.bloom_filters.append(bloom)
 

@@ -244,8 +244,6 @@ class BloomBag(TransformerMixin, BaseEstimator):
             # Create and fit the bloom filter
             bloom = BloomFilter(bucket_size_max, self.error_rate)
             bloom.add_str_batch(f)
-            #for feature in f:
-            #    bloom.add(feature)
 
             self.bloom_filters.append(bloom)
 
@@ -283,23 +281,17 @@ class BloomBag(TransformerMixin, BaseEstimator):
         elif self.input_type == "string":
             X = (((f, 1) for f in x) for x in X)
 
-        # X_by_bloombag = np.zeros((len(X), self.n_bags), dtype=np.int16)
         X_by_bloombag = []
 
         for row, x in enumerate(X):
             x = list(x)
             X_by_bloombag.append([0] * self.n_bags)
 
-            # Iterate values in row
-            for v, c in x:
-                feature_hash_indices = None
-
-                # Iterate over the bloom filters
-                for i, bloom in enumerate(self.bloom_filters):
-                    if feature_hash_indices is None:
-                        feature_hash_indices = bloom.get_hash_indices(v)
-                    if bloom.contains_hash_indices(feature_hash_indices):
-                        # Add count
+            features = list(map(lambda x: x[0], x))
+            for i, bloom in enumerate(self.bloom_filters):
+                contains = bloom.contains_str_batch(features)
+                for f, c in zip(features, contains):
+                    if c:
                         X_by_bloombag[row][i] += 1
 
         return np.array(X_by_bloombag)

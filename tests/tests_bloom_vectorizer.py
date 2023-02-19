@@ -110,7 +110,7 @@ def test_bloom_vectorizer_binary_classification_token_pattern():
     """Test BloomVectorizer with a provided token pattern"""
     print("\n\n--- Starting test_bloom_vectorizer_binary_classification_token_pattern")
     cats_pos = ["alt.atheism", "sci.space"]
-    cats_neg = ["comp.graphics"]
+    cats_neg = ["comp.graphics", "comp.sys.ibm.pc.hardware"]
     print("Downloading 20 newsgroups dataset, train")
     train_pos = fetch_20newsgroups(subset="train", remove=("headers", "footers", "quotes"), categories=cats_pos).data
     train_neg = fetch_20newsgroups(subset="train", remove=("headers", "footers", "quotes"), categories=cats_neg).data

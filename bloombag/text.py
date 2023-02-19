@@ -6,7 +6,7 @@ import scipy.sparse as sp
 
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.preprocessing import normalize
-from sklearn.feature_extraction.text import _VectorizerMixin, CountVectorizer
+from sklearn.feature_extraction.text import _VectorizerMixin, CountVectorizer, TfidfVectorizer
 from sklearn.utils._param_validation import StrOptions, Interval
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -55,6 +55,7 @@ class BloomVectorizer(
         n_bags=5,
         error_rate=0.01,
         feature_rank=None,
+        ranking_method="TfidfVectorizer",
         bloom_bag_class=BloomBag,
         binary=False,
         norm="l2",
@@ -80,6 +81,7 @@ class BloomVectorizer(
         self.norm = norm
         self.dtype = dtype
         self.bloom_bag = None
+        self.ranking_method = ranking_method
 
         if feature_rank is not None and n_features is not None:
             raise ValueError(
@@ -131,38 +133,118 @@ class BloomVectorizer(
         if self.feature_rank is not None:
             return self.feature_rank
 
-        pipeline = Pipeline(
-            [
-                (
-                    "features",
-                    CountVectorizer(
-                        tokenizer = self.tokenizer,
-                        max_features = n_features,
-                        token_pattern = self.token_pattern,
-                        stop_words = self.stop_words,
-                        ngram_range = self.ngram_range,
-                        analyzer = self.analyzer,
-                        lowercase = self.lowercase,
-                        preprocessor = self.preprocessor,
-                        strip_accents = self.strip_accents,
-                        decode_error = self.decode_error,
-                        encoding = self.encoding,
+        if self.ranking_method == "CountVectorizer":
+            pipeline = Pipeline(
+                [
+                    (
+                        "features",
+                        CountVectorizer(
+                            tokenizer = self.tokenizer,
+                            max_features = n_features,
+                            token_pattern = self.token_pattern,
+                            stop_words = self.stop_words,
+                            ngram_range = self.ngram_range,
+                            analyzer = self.analyzer,
+                            lowercase = self.lowercase,
+                            preprocessor = self.preprocessor,
+                            strip_accents = self.strip_accents,
+                            decode_error = self.decode_error,
+                            encoding = self.encoding,
+                        ),
                     ),
-                ),
-                ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
+                    ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
+                ]
+            )
+            pipeline.fit(X, y)
+
+            weights = pipeline.named_steps["classifier"].coef_
+            feature_names = pipeline.named_steps["features"].vocabulary_
+            feature_names = [
+                feature
+                for feature, index in sorted(feature_names.items(), key=lambda x: x[1])
             ]
-        )
-        pipeline.fit(X, y)
-        weights = pipeline.named_steps["classifier"].coef_
-        feature_names = pipeline.named_steps["features"].vocabulary_
-        feature_names = [
-            feature
-            for feature, index in sorted(feature_names.items(), key=lambda x: x[1])
-        ]
-        ordered_features = [
-            feature
-            for weight, feature in sorted(zip(weights[0], feature_names), reverse=True)
-        ]
+            ordered_features = [
+                feature
+                for weight, feature in sorted(zip(weights[0], feature_names), reverse=True)
+            ]
+        elif self.ranking_method == "TfidfVectorizer":
+            pipeline = Pipeline(
+                [
+                    (
+                        "features",
+                        TfidfVectorizer(
+                            tokenizer = self.tokenizer,
+                            max_features = n_features,
+                            token_pattern = self.token_pattern,
+                            stop_words = self.stop_words,
+                            ngram_range = self.ngram_range,
+                            analyzer = self.analyzer,
+                            lowercase = self.lowercase,
+                            preprocessor = self.preprocessor,
+                            strip_accents = self.strip_accents,
+                            decode_error = self.decode_error,
+                            encoding = self.encoding,
+                        ),
+                    ),
+                    ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
+                ]
+            )
+            pipeline.fit(X, y)
+
+            weights = pipeline.named_steps["classifier"].coef_
+            # Apply the scaling of the TF-IDF weights
+            _idf_diag = pipeline.named_steps["features"]._tfidf.idf_
+            weights = weights * _idf_diag
+
+            feature_names = pipeline.named_steps["features"].vocabulary_
+            feature_names = [
+                feature
+                for feature, index in sorted(feature_names.items(), key=lambda x: x[1])
+            ]
+            ordered_features = [
+                feature
+                for weight, feature in sorted(zip(weights[0], feature_names), reverse=True)
+            ]
+        elif self.ranking_method == "chi":
+            # Iterate over the training data to count the number of occurrences of each feature
+            if self.tokenizer is None:
+                raise ValueError(
+                    "Tokenizer must be set when using the 'chi' ranking method."
+                )
+            
+            vocab = {}
+            y_mean = 0
+            for x, Y in zip(X, y):
+                y_mean += Y
+                for token in self.tokenizer(x):
+                    if token not in vocab:
+                        vocab[token] = {"cnt": 0, "pos": 0}
+                    
+                    vocab[token]["cnt"] += 1
+                    if Y == 1:
+                        vocab[token]["pos"] += 1
+            
+            y_mean = y_mean / len(y)
+            
+            # Compute the chi score for each feature
+            total = (x["cnt"] for x in vocab.values())
+            observed = (x["pos"] for x in vocab.values())
+            expected = (x["cnt"] * y_mean for x in vocab.values())
+            rank = tuple(
+                map(lambda t, o, e: (o - e) / t, total, observed, expected)
+            )
+
+            # Order the feature_names array by the feature weight
+            feature_names = list(vocab.keys())
+            feature_ranks = list(rank)
+            feature_ranks, ordered_features = zip(
+                *sorted(zip(feature_ranks, feature_names))
+            )
+                
+        else:
+            raise ValueError(
+                "Invalid ranking method. Valid options are 'CountVectorizer' and 'TfidfVectorizer'."
+            )
 
         return ordered_features
 
@@ -260,6 +342,11 @@ class BloomVectorizer(
             Document-term matrix.
         """
         return self.fit(X, y).transform(X)
+
+    def get_size_in_bytes(self):
+        if self.bloom_bag is None:
+            raise ValueError("Bloom bag is not fitted yet.")
+        return self.bloom_bag.get_size_in_bytes()
 
     def _more_tags(self):
         return {"X_types": ["string"]}

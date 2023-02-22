@@ -1,8 +1,9 @@
-from .bag import BloomBagCounting, BloomBag
-from .text import BloomVectorizer
+from .bag import BloomBagCounting, BloomStratifiedBag, StratifiedBag
+from .text import StratifiedBagVectorizer
 
 __all__ = [
     "BloomBagCounting",
-    "BloomBag",
-    "BloomVectorizer",
+    "BloomStratifiedBag",
+    "StratifiedBag",
+    "StratifiedBagVectorizer",
 ]

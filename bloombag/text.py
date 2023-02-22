@@ -1,4 +1,6 @@
 
+from functools import partial
+import math
 from numbers import Integral, Real
 
 import numpy as np
@@ -11,9 +13,12 @@ from sklearn.utils._param_validation import StrOptions, Interval
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from .bag import BloomBag, BloomBagCounting
+from .bag import BloomStratifiedBag, BloomBagCounting, StratifiedBag
 
-class BloomVectorizer(
+
+
+
+class StratifiedBagVectorizer(
     TransformerMixin, _VectorizerMixin, BaseEstimator, auto_wrap_output_keys=None
 ):
     r"""TODO: Write docstring
@@ -53,10 +58,10 @@ class BloomVectorizer(
         analyzer="word",
         n_features=None,
         n_bags=5,
-        error_rate=0.01,
+        error_rate=0,
         feature_rank=None,
         ranking_method="TfidfVectorizer",
-        bloom_bag_class=BloomBag,
+        stratified_bag_class=None,
         binary=False,
         norm="l2",
         dtype=np.float64,
@@ -75,13 +80,29 @@ class BloomVectorizer(
         self.n_bags = n_bags
         self.error_rate = error_rate
         self.feature_rank = feature_rank
-        self.bloom_bag_class = bloom_bag_class
+        self.stratified_bag_class = stratified_bag_class
         self.ngram_range = ngram_range
         self.binary = binary
         self.norm = norm
         self.dtype = dtype
-        self.bloom_bag = None
+        self.stratified_bag = None
         self.ranking_method = ranking_method
+
+        if self.error_rate == 0 and self.stratified_bag_class is not None:
+            if self.stratified_bag_class != StratifiedBag:
+                raise ValueError(
+                    "When error_rate is 0, stratified_bag_class must be StratifiedBag"
+                )
+        elif self.error_rate == 0:
+            self.stratified_bag_class = StratifiedBag
+        elif self.stratified_bag_class is None:
+            self.stratified_bag_class = BloomStratifiedBag
+        
+        # Add error rate if it's a bloom bag base
+        if self.stratified_bag_class in [BloomStratifiedBag, BloomBagCounting]:
+            self.stratified_bag_class = partial(
+                self.stratified_bag_class, error_rate=self.error_rate
+            )
 
         if feature_rank is not None and n_features is not None:
             raise ValueError(
@@ -205,7 +226,7 @@ class BloomVectorizer(
                 feature
                 for weight, feature in sorted(zip(weights[0], feature_names), reverse=True)
             ]
-        elif self.ranking_method == "chi":
+        elif self.ranking_method == "chi" or self.ranking_method == "chi-tfidf":
             # Iterate over the training data to count the number of occurrences of each feature
             if self.tokenizer is None:
                 raise ValueError(
@@ -230,9 +251,28 @@ class BloomVectorizer(
             total = (x["cnt"] for x in vocab.values())
             observed = (x["pos"] for x in vocab.values())
             expected = (x["cnt"] * y_mean for x in vocab.values())
-            rank = tuple(
-                map(lambda t, o, e: (o - e) / t, total, observed, expected)
-            )
+            
+
+            if self.ranking_method == "chi-tfidf":
+                # Now compute the TF-IDF weights
+                
+                # Compute the IDF weights
+                tfidf = {}
+                for token in vocab:
+                    # +1's added to matches sklearn's implementation smooth
+                    # default implementation.
+                    tfidf[token] = (np.log((len(y) + 1) / (vocab[token]["cnt"] + 1)) + 1) * (vocab[token]["cnt"])
+                
+                # Compute the TF-IDF weights
+                rank = tuple(
+                    map(lambda token, t, o, e: tfidf[token] * (o - e) / t, vocab.keys(), total, observed, expected)
+                )
+            else:
+                # No TF-IDF scaling
+                rank = tuple(
+                    map(lambda t, o, e: (o - e) / t, total, observed, expected)
+                )
+
 
             # Order the feature_names array by the feature weight
             feature_names = list(vocab.keys())
@@ -281,16 +321,15 @@ class BloomVectorizer(
         # Run feature ranking
         self.ranked_features = self._rank_features(X, y, self.n_features)
 
-        # Build the bloom bag using self.bloom_bag_class
-        self.bloom_bag = self.bloom_bag_class(
+        # Build the sratified bag of words
+        self.stratified_bag = self.stratified_bag_class(
             n_bags=self.n_bags,
-            error_rate=self.error_rate,
             input_type="string",
             feature_rank=self.ranked_features,
         )
 
         analyzer = self.build_analyzer()
-        self.bloom_bag.fit((analyzer(doc) for doc in X), y=y)
+        self.stratified_bag.fit((analyzer(doc) for doc in X), y=y)
         return self
 
     def transform(self, X):
@@ -316,7 +355,7 @@ class BloomVectorizer(
         self._validate_ngram_range()
 
         analyzer = self.build_analyzer()
-        X = self.bloom_bag.transform(analyzer(doc) for doc in X)
+        X = self.stratified_bag.transform(analyzer(doc) for doc in X)
         if self.binary:
             X.data.fill(1)
         if self.norm is not None:
@@ -344,12 +383,10 @@ class BloomVectorizer(
         return self.fit(X, y).transform(X)
 
     def get_size_in_bytes(self):
-        if self.bloom_bag is None:
+        if self.stratified_bag is None:
             raise ValueError("Bloom bag is not fitted yet.")
-        return self.bloom_bag.get_size_in_bytes()
+        return self.stratified_bag.get_size_in_bytes()
 
     def _more_tags(self):
         return {"X_types": ["string"]}
-
-
 

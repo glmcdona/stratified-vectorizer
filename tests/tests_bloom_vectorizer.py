@@ -1,5 +1,5 @@
 import pytest
-from bloombag import BloomVectorizer, BloomBag, BloomBagCounting
+from bloombag import StratifiedBagVectorizer, BloomStratifiedBag, BloomBagCounting
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression
@@ -26,29 +26,53 @@ def test_bloom_vectorizer_binary_classification_tokenizer():
 
     n_features = 50000
     n_bags = 10
-    error_rate = 0.01
     pipelines = {
-        "BloomVectorizer": Pipeline(
+        "StratifiedBagVectorizer_e0": Pipeline(
             [
-                ("vectorizer", BloomVectorizer(
+                ("vectorizer", StratifiedBagVectorizer(
                     tokenizer = lambda x: x.split(' '),
                     n_features = n_features,
                     n_bags = n_bags,
-                    error_rate = error_rate,
+                    error_rate = 0,
                     token_pattern = None,
                 )),
                 ("classifier", LogisticRegression(max_iter=1000)),
             ]
         ),
-        "BloomVectorizerCounting": Pipeline(
+        "StratifiedBagVectorizer_e0_chi-tfidf": Pipeline(
             [
-                ("vectorizer", BloomVectorizer(
+                ("vectorizer", StratifiedBagVectorizer(
                     tokenizer = lambda x: x.split(' '),
                     n_features = n_features,
                     n_bags = n_bags,
-                    error_rate = error_rate,
+                    error_rate = 0,
                     token_pattern = None,
-                    bloom_bag_class = BloomBagCounting,
+                    ranking_method = "chi-tfidf",
+                )),
+                ("classifier", LogisticRegression(max_iter=1000)),
+            ]
+        ),
+        "StratifiedBagVectorizer_e0.01": Pipeline(
+            [
+                ("vectorizer", StratifiedBagVectorizer(
+                    tokenizer = lambda x: x.split(' '),
+                    n_features = n_features,
+                    n_bags = n_bags,
+                    error_rate = 0.01,
+                    token_pattern = None,
+                )),
+                ("classifier", LogisticRegression(max_iter=1000)),
+            ]
+        ),
+        "StratifiedBagVectorizerCounting_e0.01": Pipeline(
+            [
+                ("vectorizer", StratifiedBagVectorizer(
+                    tokenizer = lambda x: x.split(' '),
+                    n_features = n_features,
+                    n_bags = n_bags,
+                    error_rate = 0.01,
+                    token_pattern = None,
+                    stratified_bag_class = BloomBagCounting,
                 )),
                 ("classifier", LogisticRegression(max_iter=1000)),
             ]
@@ -129,7 +153,7 @@ def test_bloom_vectorizer_binary_classification_token_pattern():
     pipelines = {
         "BloomVectorizer": Pipeline(
             [
-                ("vectorizer", BloomVectorizer(
+                ("vectorizer", StratifiedBagVectorizer(
                     stop_words='english',
                     n_features = n_features,
                     n_bags = n_bags,
@@ -140,12 +164,12 @@ def test_bloom_vectorizer_binary_classification_token_pattern():
         ),
         "BloomVectorizerCounting": Pipeline(
             [
-                ("vectorizer", BloomVectorizer(
+                ("vectorizer", StratifiedBagVectorizer(
                     stop_words='english',
                     n_features = n_features,
                     n_bags = n_bags,
                     error_rate = error_rate,
-                    bloom_bag_class = BloomBagCounting,
+                    stratified_bag_class = BloomBagCounting,
                 )),
                 ("classifier", LogisticRegression(max_iter=1000)),
             ]
@@ -200,6 +224,6 @@ def test_bloom_vectorizer_binary_classification_token_pattern():
     pipeline.fit(train, train_y)
 
 if __name__ == "__main__":
-    test_bloom_vectorizer_binary_classification_token_pattern()
+    #test_bloom_vectorizer_binary_classification_token_pattern()
     test_bloom_vectorizer_binary_classification_tokenizer()
     

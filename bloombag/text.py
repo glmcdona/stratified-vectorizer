@@ -60,7 +60,8 @@ class StratifiedBagVectorizer(
         n_bags=5,
         error_rate=0,
         feature_rank=None,
-        ranking_method="TfidfVectorizer",
+        ranking_method="tfidf-learner",
+        ranking_learner=LogisticRegression(max_iter=3000, penalty=None),
         stratified_bag_class=None,
         binary=False,
         norm="l2",
@@ -87,6 +88,16 @@ class StratifiedBagVectorizer(
         self.dtype = dtype
         self.stratified_bag = None
         self.ranking_method = ranking_method
+        self.ranking_learner = ranking_learner
+
+        if ranking_method not in ["count-learner", "tfidf-learner", "chi"]:
+            raise ValueError("ranking_method must be one of 'count-learner', 'tfidf-learner', or 'chi'")
+
+        if ranking_method in ["count-learner", "tfidf-learner"] and ranking_learner is None:
+            raise ValueError("ranking_learner must be specified for a learner-based ranking.")
+        
+        if ranking_method in ["count-learner", "tfidf-learner"] and not hasattr(ranking_learner, "coef_"):
+            raise ValueError("ranking_learner must have a coef_ attribute.")
 
         if self.error_rate == 0 and self.stratified_bag_class is not None:
             if self.stratified_bag_class != StratifiedBag:
@@ -154,7 +165,7 @@ class StratifiedBagVectorizer(
         if self.feature_rank is not None:
             return self.feature_rank
 
-        if self.ranking_method == "CountVectorizer":
+        if self.ranking_method == "count-learner":
             pipeline = Pipeline(
                 [
                     (
@@ -173,7 +184,7 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
-                    ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
+                    ("classifier", self.ranking_learner),
                 ]
             )
             pipeline.fit(X, y)
@@ -188,7 +199,7 @@ class StratifiedBagVectorizer(
                 feature
                 for weight, feature in sorted(zip(weights[0], feature_names), reverse=True)
             ]
-        elif self.ranking_method == "TfidfVectorizer":
+        elif self.ranking_method == "tfidf-learner":
             pipeline = Pipeline(
                 [
                     (
@@ -207,7 +218,7 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
-                    ("classifier", LogisticRegression(solver="lbfgs", max_iter=1000)),
+                    ("classifier", self.ranking_learner),
                 ]
             )
             pipeline.fit(X, y)

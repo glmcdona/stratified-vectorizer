@@ -7,7 +7,7 @@ import numpy as np
 import scipy.sparse as sp
 
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.preprocessing import normalize
+from sklearn.preprocessing import normalize, MaxAbsScaler
 from sklearn.feature_extraction.text import _VectorizerMixin, CountVectorizer, TfidfVectorizer
 from sklearn.utils._param_validation import StrOptions, Interval
 from sklearn.linear_model import LogisticRegression
@@ -61,7 +61,7 @@ class StratifiedBagVectorizer(
         error_rate=0,
         feature_rank=None,
         ranking_method="tfidf-learner",
-        ranking_learner=LogisticRegression(max_iter=3000, penalty=None),
+        ranking_learner_args={"max_iter":3000, "penalty":None},
         stratified_bag_class=None,
         binary=False,
         norm="l2",
@@ -88,16 +88,10 @@ class StratifiedBagVectorizer(
         self.dtype = dtype
         self.stratified_bag = None
         self.ranking_method = ranking_method
-        self.ranking_learner = ranking_learner
+        self.ranking_learner_args = ranking_learner_args
 
         if ranking_method not in ["count-learner", "tfidf-learner", "chi"]:
             raise ValueError("ranking_method must be one of 'count-learner', 'tfidf-learner', or 'chi'")
-
-        if ranking_method in ["count-learner", "tfidf-learner"] and ranking_learner is None:
-            raise ValueError("ranking_learner must be specified for a learner-based ranking.")
-        
-        if ranking_method in ["count-learner", "tfidf-learner"] and not hasattr(ranking_learner, "coef_"):
-            raise ValueError("ranking_learner must have a coef_ attribute.")
 
         if self.error_rate == 0 and self.stratified_bag_class is not None:
             if self.stratified_bag_class != StratifiedBag:
@@ -184,13 +178,18 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
-                    ("classifier", self.ranking_learner),
+                    ("scaler", MaxAbsScaler()),
+                    ("classifier", LogisticRegression(**self.ranking_learner_args)),
                 ]
             )
             pipeline.fit(X, y)
 
             weights = pipeline.named_steps["classifier"].coef_
             feature_names = pipeline.named_steps["features"].vocabulary_
+
+            # Scale the weights by "scaler" values to get the true weights
+            weights = weights * pipeline.named_steps["scaler"].scale_
+
             feature_names = [
                 feature
                 for feature, index in sorted(feature_names.items(), key=lambda x: x[1])
@@ -218,12 +217,17 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
+                    ("scaler", MaxAbsScaler()),
                     ("classifier", self.ranking_learner),
                 ]
             )
             pipeline.fit(X, y)
 
             weights = pipeline.named_steps["classifier"].coef_
+
+            # Scale the weights by "scaler" values to get the true weights
+            weights = weights * pipeline.named_steps["scaler"].scale_
+
             # Apply the scaling of the TF-IDF weights
             _idf_diag = pipeline.named_steps["features"]._tfidf.idf_
             weights = weights * _idf_diag

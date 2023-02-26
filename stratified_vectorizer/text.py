@@ -90,8 +90,8 @@ class StratifiedBagVectorizer(
         self.ranking_method = ranking_method
         self.ranking_learner_args = ranking_learner_args
 
-        if ranking_method not in ["count-learner", "tfidf-learner", "chi"]:
-            raise ValueError("ranking_method must be one of 'count-learner', 'tfidf-learner', or 'chi'")
+        if ranking_method not in ["count-learner", "tfidf-learner", "chi", "chi-tfidf"]:
+            raise ValueError("ranking_method must be one of 'count-learner', 'tfidf-learner', 'chi', or 'chi-tfidf'")
 
         if self.error_rate == 0 and self.stratified_bag_class is not None:
             if self.stratified_bag_class != StratifiedBag:
@@ -218,7 +218,7 @@ class StratifiedBagVectorizer(
                         ),
                     ),
                     ("scaler", MaxAbsScaler()),
-                    ("classifier", self.ranking_learner),
+                    ("classifier", LogisticRegression(**self.ranking_learner_args)),
                 ]
             )
             pipeline.fit(X, y)

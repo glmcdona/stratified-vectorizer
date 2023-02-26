@@ -1,5 +1,5 @@
 import pytest
-from bloombag import StratifiedBagVectorizer, BloomStratifiedBag, BloomBagCounting
+from stratified_vectorizer import StratifiedBagVectorizer, BloomStratifiedBag, BloomBagCounting
 from sklearn.datasets import fetch_20newsgroups
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LogisticRegression

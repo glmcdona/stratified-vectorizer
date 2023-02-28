@@ -249,9 +249,7 @@ class StratifiedBagVectorizer(
                 )
             
             vocab = {}
-            y_mean = 0
             for x, Y in zip(X, y):
-                y_mean += Y
                 for token in self.tokenizer(x):
                     if token not in vocab:
                         vocab[token] = {"cnt": 0, "pos": 0}
@@ -260,6 +258,14 @@ class StratifiedBagVectorizer(
                     if Y == 1:
                         vocab[token]["pos"] += 1
             
+            # Limit to the top n_features by cnt
+            vocab = dict(sorted(vocab.items(), key=lambda x: x[1]["cnt"], reverse=True)[:n_features])
+
+            # Compute the mean of y
+            y_mean = 0
+            for x, Y in zip(X, y):
+                y_mean += Y
+
             y_mean = y_mean / len(y)
             
             # Compute the chi score for each feature

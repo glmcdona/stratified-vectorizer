@@ -52,6 +52,19 @@ def test_bloom_vectorizer_binary_classification_tokenizer():
                 ("classifier", LogisticRegression(max_iter=1000)),
             ]
         ),
+        "StratifiedBagVectorizer_e0_chi": Pipeline(
+            [
+                ("vectorizer", StratifiedBagVectorizer(
+                    tokenizer = lambda x: x.split(' '),
+                    n_features = n_features,
+                    n_bags = n_bags,
+                    error_rate = 0,
+                    token_pattern = None,
+                    ranking_method = "chi",
+                )),
+                ("classifier", LogisticRegression(max_iter=1000)),
+            ]
+        ),
         "StratifiedBagVectorizer_e0.01": Pipeline(
             [
                 ("vectorizer", StratifiedBagVectorizer(

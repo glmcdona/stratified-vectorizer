@@ -178,7 +178,7 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
-                    ("scaler", MaxAbsScaler()),
+                    #("scaler", MaxAbsScaler()),
                     ("classifier", LogisticRegression(**self.ranking_learner_args)),
                 ]
             )
@@ -188,7 +188,7 @@ class StratifiedBagVectorizer(
             feature_names = pipeline.named_steps["features"].vocabulary_
 
             # Scale the weights by "scaler" values to get the true weights
-            weights = weights * pipeline.named_steps["scaler"].scale_
+            #weights = weights * pipeline.named_steps["scaler"].scale_
 
             feature_names = [
                 feature
@@ -217,7 +217,7 @@ class StratifiedBagVectorizer(
                             encoding = self.encoding,
                         ),
                     ),
-                    ("scaler", MaxAbsScaler()),
+                    #("scaler", MaxAbsScaler()),
                     ("classifier", LogisticRegression(**self.ranking_learner_args)),
                 ]
             )
@@ -226,7 +226,7 @@ class StratifiedBagVectorizer(
             weights = pipeline.named_steps["classifier"].coef_
 
             # Scale the weights by "scaler" values to get the true weights
-            weights = weights * pipeline.named_steps["scaler"].scale_
+            #weights = weights * pipeline.named_steps["scaler"].scale_
 
             # Apply the scaling of the TF-IDF weights
             _idf_diag = pipeline.named_steps["features"]._tfidf.idf_

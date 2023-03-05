@@ -11,6 +11,8 @@ from sklearn.utils.validation import check_is_fitted, check_array, FLOAT_DTYPES
 from sklearn.utils import _IS_32BIT, IS_PYPY
 from sklearn.utils._param_validation import StrOptions, Interval
 
+from scipy.sparse import csr_matrix, coo_matrix
+
 class BloomBagCounting(TransformerMixin, BaseEstimator):
     _parameter_constraints: dict = {
         "n_bags": [Interval(Integral, 1, 15, closed="both")],
@@ -281,20 +283,30 @@ class BloomStratifiedBag(TransformerMixin, BaseEstimator):
         elif self.input_type == "string":
             X = (((f, 1) for f in x) for x in X)
 
-        X_by_bloombag = []
-
+        rows = []
+        cols = []
+        values = []
         for row, x in enumerate(X):
             x = list(x)
-            X_by_bloombag.append([0] * self.n_bags)
 
             features = list(map(lambda x: x[0], x))
+
             for i, bloom in enumerate(self.bloom_filters):
                 contains = bloom.contains_str_batch(features)
                 for f, c in zip(features, contains):
                     if c:
-                        X_by_bloombag[row][i] += 1
+                        rows.append(row)
+                        cols.append(i)
+                        values.append(1)
 
-        return np.array(X_by_bloombag)
+        # Create the sparse matrix
+        X = coo_matrix(
+            (values, (rows, cols)),
+            shape=(row + 1, self.n_bags),
+            dtype=self.dtype,
+        ).tocsr(copy=False)
+
+        return X
 
     def _more_tags(self):
         return {"X_types": [self.input_type]}
@@ -401,17 +413,24 @@ class StratifiedBag(TransformerMixin, BaseEstimator):
         elif self.input_type == "string":
             X = (((f, 1) for f in x) for x in X)
 
-        X_by_bucket = []
-
+        coords = []
+        values = []
         for row, x in enumerate(X):
             x = list(x)
-            X_by_bucket.append([0] * self.n_bags)
 
             for f, v in x:
                 if f in self.vocab_to_bag:
-                    X_by_bucket[row][self.vocab_to_bag[f]] += v
+                    coords.append((row, self.vocab_to_bag[f]))
+                    values.append(v)
         
-        return np.array(X_by_bucket)
+        # Create the sparse matrix
+        X = coo_matrix(
+            (values, zip(*coords)),
+            shape=(row + 1, self.n_bags),
+            dtype=self.dtype,
+        ).tocsr(copy=False)
+
+        return X
 
     def _more_tags(self):
         return {"X_types": [self.input_type]}
